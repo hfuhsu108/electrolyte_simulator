@@ -1,0 +1,1065 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>電解質與導電互動模擬</title>
+
+    <!-- Google Fonts: Noto Sans TC -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Noto Sans TC"', 'sans-serif'],
+                    },
+                    colors: {
+                        cation: '#ef4444', // Red-500
+                        anion: '#3b82f6',  // Blue-500
+                        molecule: '#9ca3af' // Gray-400
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        /* Custom Styles for specialized animations or elements not easily covered by Tailwind */
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #f8fafc; /* slate-50 */
+            margin: 0;
+            overflow-x: hidden;
+        }
+
+        /* Bulb Glow Animation */
+        .bulb-glow {
+            transition: all 0.3s ease;
+        }
+
+        /* Switch Toggle transition */
+        .toggle-checkbox:checked {
+            right: 0;
+            border-color: #22c55e;
+        }
+        .toggle-checkbox:checked + .toggle-label {
+            background-color: #22c55e;
+        }
+        
+        /* Custom scrollbar for better look */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useCallback } = React;
+
+        // --- Data Definitions ---
+        const SUBSTANCES = {
+            hcl: { 
+                id: 'hcl', 
+                name: '鹽酸', 
+                typeDesc: '強電解質', 
+                dissRate: 1.0, 
+                moleculeName: 'HCl', 
+                cationName: 'H⁺', 
+                anionName: 'Cl⁻',
+                formula: 'HCl → H⁺ + Cl⁻',
+                catCount: 1, anCount: 1, catCharge: 1, anCharge: 1,
+                desc: '強電解質在水中會 100% 解離成自由移動的陰陽離子，具有極佳的導電性。'
+            },
+            h2so4: { 
+                id: 'h2so4', 
+                name: '硫酸', 
+                typeDesc: '強電解質', 
+                dissRate: 1.0, 
+                moleculeName: 'H₂SO₄', 
+                cationName: 'H⁺', 
+                anionName: 'SO₄²⁻',
+                formula: 'H₂SO₄ → 2H⁺ + SO₄²⁻',
+                catCount: 2, anCount: 1, catCharge: 1, anCharge: 2,
+                desc: '強電解質。一個硫酸分子會解離出兩個氫離子與一個硫酸根離子，導電性強。'
+            },
+            acetic: { 
+                id: 'acetic', 
+                name: '醋酸', 
+                typeDesc: '弱電解質', 
+                dissRate: 0.15, 
+                moleculeName: 'CH₃COOH', 
+                cationName: 'H⁺', 
+                anionName: 'CH₃COO⁻',
+                formula: 'CH₃COOH ⇌ CH₃COO⁻ + H⁺',
+                catCount: 1, anCount: 1, catCharge: 1, anCharge: 1,
+                desc: '弱電解質在水中僅有少部分會解離成離子，大部分仍以分子狀態存在，導電性較弱。'
+            },
+            naoh: { 
+                id: 'naoh', 
+                name: '氫氧化鈉', 
+                typeDesc: '強電解質', 
+                dissRate: 1.0, 
+                moleculeName: 'NaOH', 
+                cationName: 'Na⁺', 
+                anionName: 'OH⁻',
+                formula: 'NaOH → Na⁺ + OH⁻',
+                catCount: 1, anCount: 1, catCharge: 1, anCharge: 1,
+                desc: '強電解質在水中會 100% 解離成自由移動的陰陽離子，具有極佳的導電性。'
+            },
+            nh4oh: { 
+                id: 'nh4oh', 
+                name: '氨水', 
+                typeDesc: '弱電解質', 
+                dissRate: 0.15, 
+                moleculeName: 'NH₄OH', 
+                cationName: 'NH₄⁺', 
+                anionName: 'OH⁻',
+                formula: 'NH₄OH ⇌ NH₄⁺ + OH⁻',
+                catCount: 1, anCount: 1, catCharge: 1, anCharge: 1,
+                desc: '弱電解質在水中僅有少部分會解離成離子，大部分仍以分子狀態存在，導電性較弱。'
+            },
+            nacl: { 
+                id: 'nacl', 
+                name: '氯化鈉', 
+                typeDesc: '強電解質', 
+                dissRate: 1.0, 
+                moleculeName: 'NaCl', 
+                cationName: 'Na⁺', 
+                anionName: 'Cl⁻',
+                formula: 'NaCl → Na⁺ + Cl⁻',
+                catCount: 1, anCount: 1, catCharge: 1, anCharge: 1,
+                desc: '強電解質在水中會 100% 解離成自由移動的陰陽離子，具有極佳的導電性。'
+            },
+            cacl2: { 
+                id: 'cacl2', 
+                name: '氯化鈣', 
+                typeDesc: '強電解質', 
+                dissRate: 1.0, 
+                moleculeName: 'CaCl₂', 
+                cationName: 'Ca²⁺', 
+                anionName: 'Cl⁻',
+                formula: 'CaCl₂ → Ca²⁺ + 2Cl⁻',
+                catCount: 1, anCount: 2, catCharge: 2, anCharge: 1,
+                desc: '強電解質。一個氯化鈣分子會解離出一個鈣離子與兩個氯離子，導電性強。'
+            },
+            ethanol: { 
+                id: 'ethanol', 
+                name: '酒精', 
+                typeDesc: '非電解質', 
+                dissRate: 0.0, 
+                moleculeName: 'C₂H₅OH', 
+                cationName: '', 
+                anionName: '',
+                formula: 'C₂H₅OH (不解離)',
+                catCount: 0, anCount: 0, catCharge: 0, anCharge: 0,
+                desc: '非電解質在水中會溶解，但完全不會解離出離子，因此水溶液不具導電性。'
+            },
+            glucose: { 
+                id: 'glucose', 
+                name: '葡萄糖', 
+                typeDesc: '非電解質', 
+                dissRate: 0.0, 
+                moleculeName: 'C₆H₁₂O₆', 
+                cationName: '', 
+                anionName: '',
+                formula: 'C₆H₁₂O₆ (不解離)',
+                catCount: 0, anCount: 0, catCharge: 0, anCharge: 0,
+                desc: '非電解質在水中會溶解，但完全不會解離出離子，因此水溶液不具導電性。'
+            }
+        };
+
+        // --- Components ---
+
+        // 1. Header Component
+        const Header = () => (
+            <header className="w-full bg-blue-600 text-white py-6 px-4 text-center shadow-md z-20 relative">
+                <h1 className="text-3xl md:text-4xl font-black tracking-wider mb-2 drop-shadow-md">電解質與導電模擬</h1>
+                <p className="text-sm md:text-base text-blue-100 font-medium">觀察強電解質、弱電解質與非電解質的微觀世界</p>
+            </header>
+        );
+
+        // 2. Control Panel Component
+        const ControlPanel = ({ substance, setSubstance, moleculeCount, onAdd, power, setPower, onReset }) => (
+            <div className="w-full bg-slate-100 py-4 px-6 shadow-sm z-10 relative flex flex-col md:flex-row items-center justify-center gap-6 md:gap-12 border-b border-slate-200">
+                
+                {/* Substance Selector */}
+                <div className="flex items-center gap-3">
+                    <label className="font-bold text-slate-700">選擇物質：</label>
+                    <div className="relative">
+                        <select 
+                            value={substance} 
+                            onChange={(e) => setSubstance(e.target.value)}
+                            className="appearance-none bg-white border-2 border-slate-300 rounded-xl py-2 pl-4 pr-10 text-slate-700 font-bold focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 shadow-sm transition-all cursor-pointer hover:bg-slate-50"
+                        >
+                            {Object.values(SUBSTANCES).map(sub => (
+                                <option key={sub.id} value={sub.id}>{sub.name} {sub.moleculeName}</option>
+                            ))}
+                        </select>
+                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-500">
+                            <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Add Particle Button */}
+                <div className="flex items-center gap-3 w-full md:w-auto">
+                    <label className="font-bold text-slate-700 whitespace-nowrap">加入物質：</label>
+                    <button 
+                        onClick={onAdd}
+                        disabled={moleculeCount >= 20}
+                        className={`font-bold py-2 px-4 rounded-xl shadow-md transition-all duration-300 flex items-center justify-center gap-1 min-w-[180px]
+                            ${moleculeCount >= 20 ? 'bg-slate-500 text-white cursor-not-allowed' : 'bg-blue-500 hover:bg-blue-600 text-white hover:scale-105 active:scale-95'}`}
+                    >
+                        {moleculeCount >= 20 ? (
+                            <>
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                                已達溶解上限
+                            </>
+                        ) : (
+                            <>
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                                加入一單位 ({moleculeCount}/20)
+                            </>
+                        )}
+                    </button>
+                </div>
+
+                {/* Power Toggle & Reset */}
+                <div className="flex items-center gap-6">
+                    <div className="flex items-center gap-3">
+                        <label className="font-bold text-slate-700">電路開關：</label>
+                        <div className="relative inline-block w-14 mr-2 align-middle select-none transition duration-200 ease-in">
+                            <input 
+                                type="checkbox" 
+                                name="toggle" 
+                                id="toggle" 
+                                checked={power}
+                                onChange={(e) => setPower(e.target.checked)}
+                                className="toggle-checkbox absolute block w-7 h-7 rounded-full bg-white border-4 border-slate-300 appearance-none cursor-pointer z-10 transition-all duration-300 shadow-sm"
+                                style={{ right: power ? '0' : '1.75rem', borderColor: power ? '#22c55e' : '#cbd5e1' }}
+                            />
+                            <label 
+                                htmlFor="toggle" 
+                                className="toggle-label block overflow-hidden h-7 rounded-full bg-slate-300 cursor-pointer transition-colors duration-300"
+                                style={{ backgroundColor: power ? '#22c55e' : '#cbd5e1' }}
+                            ></label>
+                        </div>
+                        <span className={`font-bold ${power ? 'text-green-600' : 'text-slate-500'}`}>
+                            {power ? 'ON' : 'OFF'}
+                        </span>
+                    </div>
+
+                    <button 
+                        onClick={onReset}
+                        className="bg-amber-500 hover:bg-amber-600 text-white font-bold py-2 px-4 rounded-xl shadow-lg transition-transform hover:scale-105 active:scale-95 focus:ring-4 focus:ring-amber-500/30 flex items-center gap-1"
+                    >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                        重置
+                    </button>
+                </div>
+
+            </div>
+        );
+
+        // 3. Simulation Canvas Component (Core Logic)
+        const SimulationArea = ({ substance, addTrigger, power, resetTrigger, moleculeCount }) => {
+            const canvasRef = useRef(null);
+            const animationRef = useRef(null);
+            const physicsState = useRef({
+                particles: [],
+                subData: SUBSTANCES[substance],
+                power: power,
+                bulbBrightness: 0,
+                moleculeCount: moleculeCount
+            });
+
+            // Update physics state ref when props change
+            useEffect(() => {
+                physicsState.current.subData = SUBSTANCES[substance];
+                physicsState.current.power = power;
+                physicsState.current.moleculeCount = moleculeCount;
+            }, [substance, power, moleculeCount]);
+
+            // Clear particles on Reset or Substance Change
+            useEffect(() => {
+                physicsState.current.particles = [];
+                physicsState.current.subData = SUBSTANCES[substance];
+                physicsState.current.bulbBrightness = 0;
+            }, [resetTrigger, substance]);
+
+            // Add particle when Trigger changes
+            const prevAddTrigger = useRef(0);
+            useEffect(() => {
+                if (addTrigger > prevAddTrigger.current) {
+                    const sub = SUBSTANCES[substance];
+                    const willSplit = Math.random() < sub.dissRate;
+                    
+                    physicsState.current.particles.push({
+                        id: Math.random().toString(36).substr(2, 9),
+                        type: 'mol', charge: 0, // 分子不帶電
+                        x: 200 + (Math.random() - 0.5) * 60,
+                        y: 70, // Start just below water surface
+                        // 給予一個初始的隨機速度，後續將保持此等速運動
+                        vx: (Math.random() - 0.5) * 6,
+                        vy: 2 + Math.random() * 2, 
+                        willSplit: willSplit,
+                        splitTimer: 20 + Math.random() * 40, // Frames before splitting
+                        isStuck: false
+                    });
+                    prevAddTrigger.current = addTrigger;
+                } else if (addTrigger === 0) {
+                    prevAddTrigger.current = 0;
+                }
+            }, [addTrigger, substance]);
+
+            // Animation Loop
+            useEffect(() => {
+                const canvas = canvasRef.current;
+                const ctx = canvas.getContext('2d');
+                const W = canvas.width;
+                const H = canvas.height;
+
+                const drawElectrode = (x, isPositive, isActive) => {
+                    ctx.fillStyle = '#334155'; // slate-700
+                    ctx.fillRect(x, 50, 20, 250);
+                    
+                    if (isActive) {
+                        ctx.fillStyle = isPositive ? '#ef4444' : '#3b82f6';
+                        ctx.font = 'bold 24px Noto Sans TC';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(isPositive ? '+' : '-', x + 10, 40);
+                    }
+                };
+
+                const loop = () => {
+                    const state = physicsState.current;
+                    const sub = state.subData;
+                    const particles = state.particles;
+                    
+                    // Clear Canvas
+                    ctx.clearRect(0, 0, W, H);
+
+                    // Draw Water background
+                    ctx.fillStyle = 'rgba(239, 246, 255, 0.4)'; // blue-50 with opacity
+                    ctx.fillRect(0, 50, W, H - 50);
+
+                    // Draw Electrodes
+                    drawElectrode(40, true, state.power);  // Left: Anode (+)
+                    drawElectrode(340, false, state.power); // Right: Cathode (-)
+
+                    let activeIons = 0;
+
+                    // 1. Apply basic forces and update positions (等速運動邏輯)
+                    for (let i = 0; i < particles.length; i++) {
+                        let p = particles[i];
+                        if (p.isStuck) continue; // Skip moving if stuck to electrode
+
+                        // 通電時產生電場力 (持續加速，電荷越大的離子受力越大)
+                        if (state.power) {
+                            if (p.type === 'cat') {
+                                p.vx += 0.2 * (p.charge || 1);
+                                p.vy *= 0.92; // 消除垂直速度，讓陽離子直直走向負極
+                            }
+                            if (p.type === 'an') {
+                                p.vx -= 0.2 * (p.charge || 1);
+                                p.vy *= 0.92; // 消除垂直速度，讓陰離子直直走向正極
+                            }
+                        }
+
+                        // 速度上限保護：避免通電加速過快導致物理碰撞穿透
+                        const speedSq = p.vx * p.vx + p.vy * p.vy;
+                        const maxSpeed = 5.5;
+                        if (speedSq > maxSpeed * maxSpeed) {
+                            const speed = Math.sqrt(speedSq);
+                            p.vx = (p.vx / speed) * maxSpeed;
+                            p.vy = (p.vy / speed) * maxSpeed;
+                        }
+
+                        // 更新位置 (未通電且無碰撞時，完美保持等速直線運動)
+                        p.x += p.vx;
+                        p.y += p.vy;
+                    }
+
+                    // 2. Resolve Particle-Particle Elastic Collisions (完全彈性碰撞)
+                    for (let i = 0; i < particles.length; i++) {
+                        for (let j = i + 1; j < particles.length; j++) {
+                            let p1 = particles[i];
+                            let p2 = particles[j];
+
+                            // 【關鍵修改】通電時，如果兩個粒子都在水中移動（未碰到電極），則關閉它們之間的碰撞
+                            // 讓它們可以互相穿透，確保移動路線一致、不會在中間撞來撞去
+                            if (state.power && !p1.isStuck && !p2.isStuck) {
+                                continue;
+                            }
+
+                            const r1 = p1.type === 'mol' ? 14 : 10;
+                            const r2 = p2.type === 'mol' ? 14 : 10;
+                            
+                            const dx = p2.x - p1.x;
+                            const dy = p2.y - p1.y;
+                            const distSq = dx*dx + dy*dy;
+                            const minDist = r1 + r2;
+
+                            if (distSq < minDist * minDist) {
+                                const dist = Math.sqrt(distSq);
+                                if (dist === 0) continue;
+                                
+                                // A. 位置修正 (避免粒子重疊黏住)
+                                const overlap = minDist - dist;
+                                const nx = dx / dist; // 法向量 x
+                                const ny = dy / dist; // 法向量 y
+
+                                const invM1 = p1.isStuck ? 0 : 1; // 假設卡住的粒子質量無限大
+                                const invM2 = p2.isStuck ? 0 : 1;
+                                const sumInvM = invM1 + invM2;
+                                
+                                if (sumInvM > 0) {
+                                    const correctionX = (nx * overlap) / sumInvM;
+                                    const correctionY = (ny * overlap) / sumInvM;
+                                    if (!p1.isStuck) { p1.x -= correctionX * invM1; p1.y -= correctionY * invM1; }
+                                    if (!p2.isStuck) { p2.x += correctionX * invM2; p2.y += correctionY * invM2; }
+                                }
+
+                                // B. 速度交換 (1D動量守恆應用於2D法線方向)
+                                const dvx = p2.vx - p1.vx;
+                                const dvy = p2.vy - p1.vy;
+                                const velAlongNormal = dvx * nx + dvy * ny;
+
+                                // 只有當兩者正在互相靠近時才發生碰撞反應
+                                if (velAlongNormal < 0) {
+                                    const restitution = 1.0; // 恢復係數 1.0 = 完全彈性碰撞
+                                    const j_impulse = -(1 + restitution) * velAlongNormal / sumInvM;
+                                    
+                                    const impulseX = j_impulse * nx;
+                                    const impulseY = j_impulse * ny;
+                                    
+                                    if (!p1.isStuck) {
+                                        p1.vx -= impulseX * invM1;
+                                        p1.vy -= impulseY * invM1;
+                                    }
+                                    if (!p2.isStuck) {
+                                        p2.vx += impulseX * invM2;
+                                        p2.vy += impulseY * invM2;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 3. Wall/Electrode Collisions & Dissociation Logic
+                    for (let i = particles.length - 1; i >= 0; i--) {
+                        let p = particles[i];
+                        const radius = p.type === 'mol' ? 14 : 10;
+
+                        // Calculate ions for bulb brightness
+                        if (state.power && p.isStuck) {
+                            activeIons += 1; // Stuck ions count heavily
+                        } else if (p.type === 'cat' || p.type === 'an') {
+                            activeIons += 0.2; // Moving ions count a bit
+                        }
+
+                        // Release stuck ions if power turned off
+                        if (p.isStuck && !state.power) {
+                            p.isStuck = false;
+                            p.vx = (Math.random() - 0.5) * 4;
+                            p.vy = (Math.random() - 0.5) * 4;
+                        }
+
+                        // 燒杯邊界 (完全彈性反彈，直接反轉法線速度)
+                        if (p.x < radius) { p.x = radius; p.vx = Math.abs(p.vx); }
+                        if (p.x > W - radius) { p.x = W - radius; p.vx = -Math.abs(p.vx); }
+                        if (p.y > H - radius) { p.y = H - radius; p.vy = -Math.abs(p.vy); }
+                        if (p.y < 60 + radius) { p.y = 60 + radius; p.vy = Math.abs(p.vy); } // Water surface
+
+                        // Left Electrode Interaction (x: 40-60)
+                        if (p.x - radius < 60 && p.x > 40 && p.y > 50) {
+                            if (state.power && p.type === 'an') {
+                                p.isStuck = true;
+                                p.x = 60 + radius;
+                                p.vx = 0; p.vy = 0;
+                            } else {
+                                p.x = 60 + radius; p.vx = Math.abs(p.vx); // 向右彈性反彈
+                            }
+                        }
+                        
+                        // Right Electrode Interaction (x: 340-360)
+                        if (p.x + radius > 340 && p.x < 360 && p.y > 50) {
+                            if (state.power && p.type === 'cat') {
+                                p.isStuck = true;
+                                p.x = 340 - radius;
+                                p.vx = 0; p.vy = 0;
+                            } else {
+                                p.x = 340 - radius; p.vx = -Math.abs(p.vx); // 向左彈性反彈
+                            }
+                        }
+
+                        // --- Dissociation Logic ---
+                        if (p.type === 'mol' && p.willSplit) {
+                            p.splitTimer--;
+                            if (p.splitTimer <= 0) {
+                                // 拆分成陰陽離子 (支援 1:2 或 2:1 的不對稱解離)
+                                particles.splice(i, 1);
+                                const splitSpeed = 3; 
+
+                                // 產生陽離子
+                                for(let c = 0; c < sub.catCount; c++) {
+                                    const angle = Math.random() * Math.PI * 2;
+                                    particles.push({
+                                        id: Math.random().toString(36), type: 'cat', charge: sub.catCharge,
+                                        x: p.x + Math.cos(angle) * 5, y: p.y + Math.sin(angle) * 5, 
+                                        vx: p.vx + Math.cos(angle) * splitSpeed, 
+                                        vy: p.vy + Math.sin(angle) * splitSpeed, 
+                                        willSplit: false, isStuck: false
+                                    });
+                                }
+                                
+                                // 產生陰離子
+                                for(let a = 0; a < sub.anCount; a++) {
+                                    const angle = Math.random() * Math.PI * 2;
+                                    particles.push({
+                                        id: Math.random().toString(36), type: 'an', charge: sub.anCharge,
+                                        x: p.x + Math.cos(angle) * 5, y: p.y + Math.sin(angle) * 5, 
+                                        vx: p.vx + Math.cos(angle) * splitSpeed, 
+                                        vy: p.vy + Math.sin(angle) * splitSpeed, 
+                                        willSplit: false, isStuck: false
+                                    });
+                                }
+                                continue; 
+                            }
+                        }
+
+                        // --- Drawing ---
+                        ctx.beginPath();
+                        ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+                        
+                        let fillStyle = '#9ca3af'; // Molecule (gray)
+                        let text = sub.moleculeName;
+                        if (p.type === 'cat') {
+                            fillStyle = '#ef4444'; // Cation (red)
+                            text = sub.cationName;
+                            activeIons += 0.1; // Moving ions also contribute slightly to current
+                        } else if (p.type === 'an') {
+                            fillStyle = '#3b82f6'; // Anion (blue)
+                            text = sub.anionName;
+                            activeIons += 0.1;
+                        }
+
+                        // Molecule shaking effect before splitting
+                        if (p.type === 'mol' && p.willSplit && p.splitTimer < 30) {
+                            ctx.fillStyle = p.splitTimer % 4 < 2 ? '#f87171' : '#60a5fa'; // Flash
+                        } else {
+                            ctx.fillStyle = fillStyle;
+                        }
+
+                        ctx.fill();
+                        ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+                        ctx.lineWidth = 1;
+                        ctx.stroke();
+
+                        ctx.fillStyle = 'white';
+                        ctx.font = p.type === 'mol' ? '10px Arial' : 'bold 12px Arial';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText(text, p.x, p.y);
+                    }
+
+                    // Calculate Bulb Brightness based on active ions and power
+                    if (state.power) {
+                        // Divisor adjusted for realistic curve with smaller numbers of particles
+                        const targetBrightness = Math.min(1, activeIons / 10); 
+                        state.bulbBrightness += (targetBrightness - state.bulbBrightness) * 0.1;
+                    } else {
+                        state.bulbBrightness *= 0.8; // Fade out quickly
+                    }
+
+                    // Update DOM element for bulb glow & rays (to avoid react state update in requestAnimationFrame)
+                    const bulbOverlay = document.getElementById('bulb-glow-overlay');
+                    const raysSvg = document.getElementById('bulb-rays-svg');
+                    
+                    const opacity = state.bulbBrightness.toFixed(2);
+                    const b = state.bulbBrightness;
+
+                    // 1. Update Bulb Inner Glow
+                    if (bulbOverlay) {
+                        bulbOverlay.style.opacity = opacity;
+                        bulbOverlay.style.filter = `drop-shadow(0 0 ${20 + opacity * 40}px rgba(253, 224, 71, ${opacity}))`;
+                    }
+
+                    // 2. Update Bulb Rays (PhET Style)
+                    if (raysSvg) {
+                        let raysHtml = '';
+                        if (b > 0.05) {
+                            // 動態決定射線數量
+                            let numRays = 8;
+                            if (b > 0.8) numRays = 36;
+                            else if (b > 0.5) numRays = 24;
+                            else if (b > 0.2) numRays = 16;
+                            
+                            const baseLength = 40; // 從燈泡圖示外圍開始發射
+                            const rayLength = baseLength + (b * 90); // 隨亮度變長
+                            const cx = 150;
+                            const cy = 150;
+                            
+                            for(let i = 0; i < numRays; i++) {
+                                // 略微偏移起始角度，讓射線看起來在轉動或錯落
+                                const angle = (i * (Math.PI * 2)) / numRays - Math.PI / 2; 
+                                const x1 = cx + Math.cos(angle) * baseLength;
+                                const y1 = cy + Math.sin(angle) * baseLength;
+                                const x2 = cx + Math.cos(angle) * rayLength;
+                                const y2 = cy + Math.sin(angle) * rayLength;
+                                
+                                raysHtml += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#fde047" stroke-width="${1.5 + b * 2.5}" stroke-linecap="round" opacity="${0.4 + b * 0.6}" />`;
+                            }
+                        }
+                        raysSvg.innerHTML = raysHtml;
+                    }
+
+                    // --- Calculate Stats & Update DOM ---
+                    let countMol = 0, countCat = 0, countAn = 0;
+                    for (let i = 0; i < particles.length; i++) {
+                        const type = particles[i].type;
+                        if (type === 'mol') countMol++;
+                        else if (type === 'cat') countCat++;
+                        else if (type === 'an') countAn++;
+                    }
+
+                    const totalAdded = state.moleculeCount || 0;
+                    let dissCount = totalAdded - countMol;
+                    if (dissCount < 0) dissCount = 0;
+
+                    let dissRatePerc = 0, molRatePerc = 0;
+                    if (totalAdded > 0) {
+                        dissRatePerc = Math.round((dissCount / totalAdded) * 100);
+                        molRatePerc = 100 - dissRatePerc;
+                    }
+
+                    const updateEl = (id, text) => { 
+                        const el = document.getElementById(id); 
+                        if(el && el.innerText !== String(text)) el.innerText = text; 
+                    };
+                    const updateStyle = (id, prop, val) => { 
+                        const el = document.getElementById(id); 
+                        if(el && el.style[prop] !== val) el.style[prop] = val; 
+                    };
+
+                    updateEl('stat-total', totalAdded);
+                    updateEl('stat-mol', countMol);
+                    updateEl('stat-cat', countCat);
+                    updateEl('stat-an', countAn);
+                    updateEl('stat-diss-perc', dissRatePerc + '%');
+                    updateEl('stat-mol-perc', molRatePerc + '%');
+                    
+                    updateStyle('stat-bar-diss', 'width', dissRatePerc + '%');
+                    updateStyle('stat-bar-mol', 'width', molRatePerc + '%');
+
+                    animationRef.current = requestAnimationFrame(loop);
+                };
+
+                loop();
+
+                return () => {
+                    cancelAnimationFrame(animationRef.current);
+                };
+            }, []);
+
+            return (
+                <div className="flex flex-col md:flex-row justify-center items-center md:items-start gap-8 mt-8 mb-16 w-full max-w-5xl mx-auto px-4 select-none">
+                    
+                    {/* Left: Original Circuit & Beaker */}
+                    <div className="relative w-[400px] h-[450px] flex-shrink-0 flex flex-col items-center">
+                        
+                        {/* Circuit Top (Battery & Bulb) */}
+                        <div className="relative w-full h-[150px] flex justify-center items-start">
+                            {/* Wires */}
+                            <svg className="absolute top-0 left-0 w-full h-full pointer-events-none" style={{ zIndex: 0 }}>
+                                {/* 左側導線 (左電極 -> 電池正極) */}
+                                <path d="M 50 150 L 50 60 L 80 60" stroke="#334155" strokeWidth="4" fill="none" />
+                                {/* 中間導線 (電池負極 -> 燈泡) */}
+                                <path d="M 184 60 L 228 60" stroke="#334155" strokeWidth="4" fill="none" />
+                                {/* 右側導線 (燈泡 -> 右電極) */}
+                                <path d="M 308 60 L 350 60 L 350 150" stroke="#334155" strokeWidth="4" fill="none" />
+                            </svg>
+                            
+                            {/* Battery */}
+                            <div className="absolute top-[40px] left-[80px] flex items-center bg-white rounded border-2 border-slate-300 shadow-sm z-10 h-10">
+                                <div className="w-8 h-full bg-red-500 rounded-l flex items-center justify-center text-white text-lg font-bold">+</div>
+                                <div className="w-10 h-full bg-slate-100 flex items-center justify-center border-x border-slate-300 font-bold text-slate-700 text-sm">DC</div>
+                                <div className="w-8 h-full bg-slate-700 rounded-r flex items-center justify-center text-white text-lg font-bold">-</div>
+                            </div>
+
+                            {/* Light Bulb */}
+                            <div className="absolute top-[12px] left-[220px] z-10">
+                                <div className="relative w-24 h-24 flex items-center justify-center">
+                                    {/* 射線 SVG (放在燈泡最底層) */}
+                                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none" style={{ width: '300px', height: '300px', zIndex: -1 }}>
+                                        <svg id="bulb-rays-svg" width="300" height="300"></svg>
+                                    </div>
+
+                                    {/* Base Bulb (Off state) */}
+                                    <svg viewBox="0 0 24 24" className="w-20 h-20 text-slate-300 absolute">
+                                        <circle cx="12" cy="12" r="8" fill="white" className="opacity-80" /> {/* 加入白色底圖防止射線穿透圖示 */}
+                                        <path fill="currentColor" d="M12 2C8.13 2 5 5.13 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.87-3.13-7-7-7zm-1 19c0 .55.45 1 1 1h2c.55 0 1-.45 1-1v-1h-4v1z"/>
+                                    </svg>
+                                    {/* Glow Bulb (On state) overlay */}
+                                    <svg id="bulb-glow-overlay" viewBox="0 0 24 24" className="w-20 h-20 text-yellow-400 absolute transition-opacity duration-200" style={{ opacity: 0 }}>
+                                        <path fill="currentColor" d="M12 2C8.13 2 5 5.13 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.87-3.13-7-7-7zm-1 19c0 .55.45 1 1 1h2c.55 0 1-.45 1-1v-1h-4v1z"/>
+                                    </svg>
+                                </div>
+                                <div className="text-center font-bold text-slate-600 mt-[-10px] bg-white/80 px-2 rounded-full shadow-sm relative z-20">燈泡</div>
+                            </div>
+                        </div>
+
+                        {/* Beaker & Canvas */}
+                        <div className="relative w-[400px] h-[300px] z-10">
+                            {/* Beaker Back Container */}
+                            <div className="absolute inset-0 border-4 border-t-0 border-blue-200 rounded-b-[40px] overflow-hidden shadow-inner">
+                                <canvas 
+                                    ref={canvasRef} 
+                                    width={400} 
+                                    height={300} 
+                                    className="w-full h-full absolute top-0 left-0 bg-transparent"
+                                />
+                            </div>
+                            {/* Beaker Lip */}
+                            <div className="absolute -top-1 -left-2 w-[416px] h-2 bg-blue-200 rounded-full"></div>
+                            <div className="absolute top-0 right-[-10px] text-blue-300 font-bold select-none">水溶液</div>
+                        </div>
+                    </div>
+
+                    {/* Right: Real-time Stats Panel */}
+                    <div className="w-full max-w-[400px] md:h-[450px] bg-white rounded-2xl shadow-xl p-6 border border-slate-200 flex flex-col relative z-10">
+                        <h3 className="text-xl font-bold text-slate-800 border-b border-slate-100 pb-3 flex items-center gap-2 flex-shrink-0">
+                            <svg className="w-6 h-6 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                            </svg>
+                            即時微粒統計
+                        </h3>
+
+                        <div className="flex-grow flex flex-col justify-evenly mt-2">
+                            <div className="bg-slate-50 p-5 rounded-xl flex justify-between items-center border border-slate-100 shadow-sm">
+                                <span className="font-bold text-slate-600">總加入分子數</span>
+                                <span className="text-4xl font-black text-slate-800" id="stat-total">0</span>
+                            </div>
+
+                            <div className="space-y-3">
+                                <div className="flex justify-between text-sm font-bold">
+                                    <span className="text-slate-500">未解離 (<span id="stat-mol-perc">0%</span>)</span>
+                                    <span className="text-blue-600">已解離 (<span id="stat-diss-perc">0%</span>)</span>
+                                </div>
+                                {/* Progress bar */}
+                                <div className="h-5 w-full bg-slate-200 rounded-full overflow-hidden flex shadow-inner">
+                                    <div id="stat-bar-mol" className="h-full bg-slate-400 transition-all duration-300" style={{width: '0%'}}></div>
+                                    <div id="stat-bar-diss" className="h-full bg-blue-500 transition-all duration-300" style={{width: '0%'}}></div>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="col-span-2 bg-slate-50 border border-slate-200 p-4 rounded-xl flex justify-between items-center shadow-sm">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-4 h-4 rounded-full bg-molecule shadow-sm"></div>
+                                        <span className="text-sm font-bold text-slate-600">分子 ({SUBSTANCES[substance].moleculeName})</span>
+                                    </div>
+                                    <span className="text-2xl font-black text-slate-700" id="stat-mol">0</span>
+                                </div>
+                                
+                                <div className="bg-red-50 border border-red-100 p-4 rounded-xl flex flex-col items-center justify-center shadow-sm">
+                                    <div className="w-4 h-4 rounded-full bg-cation mb-2 shadow-sm"></div>
+                                    <span className="text-xs font-bold text-slate-600 mb-1">陽離子</span>
+                                    <span className="text-[0.75rem] font-bold text-red-500 mb-2">{SUBSTANCES[substance].cationName || '無'}</span>
+                                    <span className="text-3xl font-black text-red-600" id="stat-cat">0</span>
+                                </div>
+                                
+                                <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl flex flex-col items-center justify-center shadow-sm">
+                                    <div className="w-4 h-4 rounded-full bg-anion mb-2 shadow-sm"></div>
+                                    <span className="text-xs font-bold text-slate-600 mb-1">陰離子</span>
+                                    <span className="text-[0.75rem] font-bold text-blue-500 mb-2">{SUBSTANCES[substance].anionName || '無'}</span>
+                                    <span className="text-3xl font-black text-blue-600" id="stat-an">0</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            );
+        };
+
+        // 4. Theory Panel Component
+        const TheoryPanel = ({ substance }) => {
+            const sub = SUBSTANCES[substance];
+
+            return (
+                <div className="w-full max-w-6xl mx-auto p-4 md:p-6 mt-2">
+                    <div className="bg-white rounded-2xl shadow-xl p-6 md:p-8 border border-slate-100">
+                        <div className="flex flex-col lg:flex-row gap-8 items-stretch">
+                            
+                            {/* Left: Text Info & Formula */}
+                            <div className="flex-1 flex flex-col space-y-4 justify-between">
+                                <div>
+                                    <div className="flex flex-wrap items-end gap-4 border-b border-slate-100 pb-4">
+                                        <h2 className="text-3xl font-black text-slate-800">{sub.name}</h2>
+                                        <span className="text-2xl text-slate-500 font-bold">{sub.moleculeName}</span>
+                                        <span className={`px-4 py-1 rounded-full text-white font-bold shadow-sm ${
+                                            sub.dissRate === 1.0 ? 'bg-green-500' : sub.dissRate > 0 ? 'bg-amber-500' : 'bg-slate-500'
+                                        }`}>
+                                            {sub.typeDesc}
+                                        </span>
+                                    </div>
+                                    
+                                    <p className="text-slate-600 leading-relaxed text-lg px-2 mt-4">
+                                        {sub.desc}
+                                    </p>
+
+                                    <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 mt-6 text-center shadow-sm w-full">
+                                        <h3 className="text-sm font-bold text-slate-500 mb-3">化學解離方程式</h3>
+                                        <p className="text-3xl md:text-4xl font-black text-slate-800 tracking-wider whitespace-nowrap overflow-x-auto pb-2">{sub.formula}</p>
+                                    </div>
+                                </div>
+
+                                {sub.catCount > 0 && (
+                                    <div className="mt-4 p-5 bg-blue-50 rounded-xl border border-blue-100 text-center shadow-sm w-full">
+                                        <p className="text-sm md:text-base text-blue-800 font-medium leading-relaxed">
+                                            💡 <strong className="font-bold text-blue-900">電中性原理</strong>：<br/>任何水溶液中，無論正負離子數量是否相等，<br className="hidden lg:block" />其所帶的<span className="text-red-600 font-bold mx-1">總正電量</span>與<span className="text-blue-600 font-bold mx-1">總負電量</span>必定相等。
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Right: Charge Calculation Analysis */}
+                            <div className="flex-1 flex flex-col w-full bg-slate-50 p-6 rounded-2xl border border-slate-100 shadow-inner justify-center h-full">
+                                <h3 className="text-xl font-bold text-slate-700 mb-6 text-center">電量與電中性分析</h3>
+                                
+                                {sub.catCount === 0 ? (
+                                    <div className="flex-1 flex flex-col items-center justify-center text-slate-500 font-bold h-48">
+                                        <svg className="w-12 h-12 mb-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+                                        非電解質，不產生離子
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col w-full gap-4 max-w-lg mx-auto">
+                                        
+                                        {/* Cation Calculation Card */}
+                                        <div className="flex flex-col bg-white p-4 lg:p-5 rounded-xl border border-red-100 shadow-sm relative overflow-hidden">
+                                            <div className="absolute left-0 top-0 bottom-0 w-2 bg-red-400"></div>
+                                            <div className="pl-4 flex justify-between items-center">
+                                                <div className="text-red-500 font-bold text-xl w-16 text-center">{sub.cationName}</div>
+                                                <div className="flex items-center gap-2 lg:gap-4 text-slate-700">
+                                                    <div className="flex flex-col items-center w-12">
+                                                        <span className="text-[0.65rem] lg:text-xs text-slate-500 font-bold mb-1">數量比</span>
+                                                        <span className="text-2xl font-black text-slate-800">{sub.catCount}</span>
+                                                    </div>
+                                                    <span className="text-lg text-slate-300 font-black">×</span>
+                                                    <div className="flex flex-col items-center w-16">
+                                                        <span className="text-[0.65rem] lg:text-xs text-slate-500 font-bold mb-1">單一電荷數</span>
+                                                        <span className="text-2xl font-black text-slate-800">{sub.catCharge}</span>
+                                                    </div>
+                                                    <span className="text-lg text-slate-300 font-black">=</span>
+                                                    <div className="flex flex-col items-center w-16">
+                                                        <span className="text-[0.65rem] lg:text-xs text-red-600 font-bold mb-1">正電量</span>
+                                                        <span className="text-3xl font-black text-red-500">{sub.catCount * sub.catCharge}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Anion Calculation Card */}
+                                        <div className="flex flex-col bg-white p-4 lg:p-5 rounded-xl border border-blue-100 shadow-sm relative overflow-hidden">
+                                            <div className="absolute left-0 top-0 bottom-0 w-2 bg-blue-400"></div>
+                                            <div className="pl-4 flex justify-between items-center">
+                                                <div className="text-blue-500 font-bold text-xl w-16 text-center">{sub.anionName}</div>
+                                                <div className="flex items-center gap-2 lg:gap-4 text-slate-700">
+                                                    <div className="flex flex-col items-center w-12">
+                                                        <span className="text-[0.65rem] lg:text-xs text-slate-500 font-bold mb-1">數量比</span>
+                                                        <span className="text-2xl font-black text-slate-800">{sub.anCount}</span>
+                                                    </div>
+                                                    <span className="text-lg text-slate-300 font-black">×</span>
+                                                    <div className="flex flex-col items-center w-16">
+                                                        <span className="text-[0.65rem] lg:text-xs text-slate-500 font-bold mb-1">單一電荷數</span>
+                                                        <span className="text-2xl font-black text-slate-800">{sub.anCharge}</span>
+                                                    </div>
+                                                    <span className="text-lg text-slate-300 font-black">=</span>
+                                                    <div className="flex flex-col items-center w-16">
+                                                        <span className="text-[0.65rem] lg:text-xs text-blue-600 font-bold mb-1">負電量</span>
+                                                        <span className="text-3xl font-black text-blue-500">{sub.anCount * sub.anCharge}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Equality Conclusion */}
+                                        <div className="mt-2 flex flex-col items-center justify-center p-4 bg-amber-50 rounded-xl border border-amber-200 shadow-sm">
+                                            <span className="text-sm lg:text-base font-bold text-amber-700 mb-3">總正電量等於總負電量，維持溶液電中性</span>
+                                            <div className="flex items-center gap-4 lg:gap-6 text-2xl lg:text-3xl font-black text-slate-800 tracking-wider">
+                                                <div className="flex flex-col items-center">
+                                                    <span className="text-red-600 bg-white px-5 py-2 rounded-xl border-2 border-red-100 shadow-sm min-w-[3.5rem] text-center text-3xl lg:text-4xl">{sub.catCount * sub.catCharge}</span>
+                                                    <span className="text-xs lg:text-sm text-red-600 mt-2 font-bold">總正電量</span>
+                                                </div>
+                                                <span className="text-amber-500 text-3xl lg:text-4xl mb-6">=</span>
+                                                <div className="flex flex-col items-center">
+                                                    <span className="text-blue-600 bg-white px-5 py-2 rounded-xl border-2 border-blue-100 shadow-sm min-w-[3.5rem] text-center text-3xl lg:text-4xl">{sub.anCount * sub.anCharge}</span>
+                                                    <span className="text-xs lg:text-sm text-blue-600 mt-2 font-bold">總負電量</span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                    </div>
+                                )}
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // Main Application Component
+        const App = () => {
+            const [mode, setMode] = useState('experiment'); // 'experiment' | 'theory'
+            const [substance, setSubstance] = useState('hcl');
+            const [moleculeCount, setMoleculeCount] = useState(0);
+            const [power, setPower] = useState(false);
+            const [addTrigger, setAddTrigger] = useState(0);
+            const [resetTrigger, setResetTrigger] = useState(0);
+            const [toastMsg, setToastMsg] = useState('');
+
+            const handleAdd = () => {
+                if (moleculeCount >= 20) {
+                    setToastMsg('已達溶解度上限！請勿再加入。');
+                    setTimeout(() => setToastMsg(''), 3000);
+                    return;
+                }
+                setMoleculeCount(prev => prev + 1);
+                setAddTrigger(prev => prev + 1);
+            };
+
+            const handleReset = () => {
+                setPower(false);
+                setMoleculeCount(0);
+                setAddTrigger(0);
+                setResetTrigger(prev => prev + 1);
+            };
+
+            const handleSubstanceChange = (newSubstance) => {
+                setSubstance(newSubstance);
+                handleReset(); // Clear beaker when changing substance
+            };
+
+            return (
+                <div className="min-h-screen flex flex-col bg-slate-50 pb-20">
+                    {/* Toast Notification */}
+                    <div className={`fixed top-24 left-1/2 transform -translate-x-1/2 z-50 transition-all duration-300 pointer-events-none ${toastMsg ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'}`}>
+                        <div className="bg-red-500 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-2 font-bold text-lg">
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                            {toastMsg}
+                        </div>
+                    </div>
+
+                    <Header />
+                    
+                    {/* Control Panel only visible in Experiment mode */}
+                    {mode === 'experiment' && (
+                        <ControlPanel 
+                            substance={substance} setSubstance={handleSubstanceChange}
+                            moleculeCount={moleculeCount} onAdd={handleAdd}
+                            power={power} setPower={setPower}
+                            onReset={handleReset}
+                        />
+                    )}
+
+                    {/* Main Interaction Area */}
+                    <main className="flex-grow w-full max-w-6xl mx-auto flex flex-col relative px-4">
+                        {/* Tab Content Transition */}
+                        <div className={`transition-opacity duration-500 ${mode === 'experiment' ? 'opacity-100 relative z-10' : 'opacity-0 hidden'}`}>
+                            {mode === 'experiment' && (
+                                <SimulationArea 
+                                    substance={substance} 
+                                    addTrigger={addTrigger} 
+                                    power={power} 
+                                    resetTrigger={resetTrigger} 
+                                    moleculeCount={moleculeCount}
+                                />
+                            )}
+                        </div>
+
+                        <div className={`transition-opacity duration-500 ${mode === 'theory' ? 'opacity-100 relative z-10' : 'opacity-0 hidden'}`}>
+                            {mode === 'theory' && (
+                                <div className="mt-8">
+                                    {/* Simple selector for theory mode - updated to flex-wrap to fit more items */}
+                                    <div className="flex flex-wrap justify-center mb-4 gap-3">
+                                        {Object.values(SUBSTANCES).map(sub => (
+                                            <button 
+                                                key={`theory-${sub.id}`}
+                                                onClick={() => setSubstance(sub.id)}
+                                                className={`px-4 py-2 rounded-xl font-bold shadow-sm transition-all text-sm md:text-base ${substance === sub.id ? 'bg-blue-600 text-white shadow-md transform scale-105 ring-2 ring-blue-300 ring-offset-2' : 'bg-white text-slate-600 hover:bg-slate-100'}`}
+                                            >
+                                                {sub.name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <TheoryPanel substance={substance} />
+                                </div>
+                            )}
+                        </div>
+                    </main>
+
+                    {/* Bottom Navigation */}
+                    <nav className="fixed bottom-0 left-0 w-full bg-slate-900 flex justify-center z-50 shadow-[0_-4px_20px_rgba(0,0,0,0.2)]">
+                        <button 
+                            onClick={() => setMode('experiment')}
+                            className={`flex-1 max-w-xs py-5 text-center font-bold text-lg transition-all duration-300 relative ${
+                                mode === 'experiment' 
+                                ? 'bg-slate-800 text-white border-t-4 border-blue-500 transform -translate-y-1 rounded-t-xl' 
+                                : 'text-slate-400 hover:text-slate-200 border-t-4 border-transparent hover:bg-slate-800/50'
+                            }`}
+                        >
+                            <div className="flex items-center justify-center gap-2">
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>
+                                實驗模式
+                            </div>
+                        </button>
+                        <button 
+                            onClick={() => setMode('theory')}
+                            className={`flex-1 max-w-xs py-5 text-center font-bold text-lg transition-all duration-300 relative ${
+                                mode === 'theory' 
+                                ? 'bg-slate-800 text-white border-t-4 border-blue-500 transform -translate-y-1 rounded-t-xl' 
+                                : 'text-slate-400 hover:text-slate-200 border-t-4 border-transparent hover:bg-slate-800/50'
+                            }`}
+                        >
+                            <div className="flex items-center justify-center gap-2">
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
+                                理論模式
+                            </div>
+                        </button>
+                    </nav>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
