@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="format-detection" content="telephone=no">
     <title>電解質與導電互動模擬</title>
 
     <!-- Google Fonts: Noto Sans TC -->
@@ -82,6 +83,7 @@
         const { useState, useEffect, useRef, useCallback } = React;
 
         // --- Data Definitions ---
+        // 嚴格使用原生 unicode 上下標：⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻₁₂₃₄₅₆₇₈₉
         const SUBSTANCES = {
             hcl: { 
                 id: 'hcl', 
@@ -350,7 +352,7 @@
                     
                     if (isActive) {
                         ctx.fillStyle = isPositive ? '#ef4444' : '#3b82f6';
-                        ctx.font = 'bold 24px Noto Sans TC';
+                        ctx.font = 'bold 24px "Noto Sans TC", sans-serif';
                         ctx.textAlign = 'center';
                         ctx.fillText(isPositive ? '+' : '-', x + 10, 40);
                     }
@@ -581,8 +583,9 @@
                         ctx.lineWidth = 1;
                         ctx.stroke();
 
+                        // 統一在 Canvas 中使用 Noto Sans TC 確保所有 unicode 上下標不會因為 Arial 字體退化而錯位
                         ctx.fillStyle = 'white';
-                        ctx.font = p.type === 'mol' ? '10px Arial' : 'bold 12px Arial';
+                        ctx.font = p.type === 'mol' ? '500 11px "Noto Sans TC", sans-serif' : '700 13px "Noto Sans TC", sans-serif';
                         ctx.textAlign = 'center';
                         ctx.textBaseline = 'middle';
                         ctx.fillText(text, p.x, p.y);
